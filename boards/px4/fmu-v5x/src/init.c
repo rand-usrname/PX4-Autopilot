@@ -70,9 +70,12 @@
 #include <systemlib/px4_macros.h>
 #include <px4_arch/io_timer.h>
 #include <px4_platform_common/init.h>
+#include <px4_platform_common/mtd_config.h>
 #include <px4_platform/gpio.h>
 #include <px4_platform/board_determine_hw_info.h>
 #include <px4_platform/board_dma_alloc.h>
+
+#include <uORB/uORB.h>
 
 /****************************************************************************
  * Pre-Processor Definitions
@@ -280,5 +283,7 @@ __EXPORT int board_app_initialize(uintptr_t arg)
 
 #endif /* CONFIG_MMCSD */
 
+	uorb_start();
+	px4_mtd_config(&board_mtd_config);
 	return OK;
 }
