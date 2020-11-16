@@ -40,7 +40,10 @@
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/module.h>
 
-extern "C" { __EXPORT int uorb_main(int argc, char *argv[]); }
+extern "C" {
+	__EXPORT int uorb_main(int argc, char *argv[]);
+	__EXPORT int uorb_start(void);
+}
 
 static uORB::DeviceMaster *g_dev = nullptr;
 static void usage()
@@ -82,6 +85,37 @@ $ uorb top
 	PRINT_MODULE_USAGE_ARG("<filter1> [<filter2>]", "topic(s) to match (implies -a)", true);
 }
 
+int uorb_start(void)
+{
+
+  if (g_dev != nullptr) {
+    PX4_WARN("already loaded");
+    /* user wanted to start uorb, its already running, no error */
+    return 0;
+  }
+
+  if (!uORB::Manager::initialize()) {
+    PX4_ERR("uorb manager alloc failed");
+    return -ENOMEM;
+  }
+
+  /* create the driver */
+  g_dev = uORB::Manager::get_instance()->get_device_master();
+
+  if (g_dev == nullptr) {
+    return -errno;
+  }
+
+#if !defined(__PX4_QURT)
+  /* FIXME: this fails on Snapdragon (see https://github.com/PX4/Firmware/issues/5406),
+   * so we disable logging messages to the ulog for now. This needs further investigations.
+   */
+  px4_log_initialize();
+#endif
+
+  return OK;
+}
+
 int
 uorb_main(int argc, char *argv[])
 {
@@ -94,33 +128,7 @@ uorb_main(int argc, char *argv[])
 	 * Start/load the driver.
 	 */
 	if (!strcmp(argv[1], "start")) {
-
-		if (g_dev != nullptr) {
-			PX4_WARN("already loaded");
-			/* user wanted to start uorb, its already running, no error */
-			return 0;
-		}
-
-		if (!uORB::Manager::initialize()) {
-			PX4_ERR("uorb manager alloc failed");
-			return -ENOMEM;
-		}
-
-		/* create the driver */
-		g_dev = uORB::Manager::get_instance()->get_device_master();
-
-		if (g_dev == nullptr) {
-			return -errno;
-		}
-
-#if !defined(__PX4_QURT)
-		/* FIXME: this fails on Snapdragon (see https://github.com/PX4/Firmware/issues/5406),
-		 * so we disable logging messages to the ulog for now. This needs further investigations.
-		 */
-		px4_log_initialize();
-#endif
-
-		return OK;
+		return uorb_start();
 	}
 
 	/*

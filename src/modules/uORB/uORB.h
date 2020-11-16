@@ -227,6 +227,11 @@ extern int	orb_set_interval(int handle, unsigned interval) __EXPORT;
  */
 extern int	orb_get_interval(int handle, unsigned *interval) __EXPORT;
 
+/**
+ * For non-command line starting
+ */
+extern int uorb_start(void);
+
 __END_DECLS
 
 /* Diverse uORB header defines */ //XXX: move to better location
