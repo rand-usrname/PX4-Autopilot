@@ -1577,6 +1577,7 @@ Mavlink::configure_streams_to_default(const char *configure_single_stream)
 		configure_stream_local("ESTIMATOR_STATUS", 0.5f);
 		configure_stream_local("EXTENDED_SYS_STATE", 1.0f);
 		configure_stream_local("GLOBAL_POSITION_INT", 5.0f);
+		configure_stream_local("GPS_GLOBAL_ORIGIN", 0.5f);
 		configure_stream_local("GPS2_RAW", 1.0f);
 		configure_stream_local("GPS_RAW_INT", 1.0f);
 		configure_stream_local("GPS_STATUS", 1.0f);
@@ -1632,6 +1633,7 @@ Mavlink::configure_streams_to_default(const char *configure_single_stream)
 		configure_stream_local("ESTIMATOR_STATUS", 1.0f);
 		configure_stream_local("EXTENDED_SYS_STATE", 5.0f);
 		configure_stream_local("GLOBAL_POSITION_INT", 50.0f);
+		configure_stream_local("GPS_GLOBAL_ORIGIN", 0.5f);
 		configure_stream_local("GPS2_RAW", unlimited_rate);
 		configure_stream_local("GPS_RAW_INT", unlimited_rate);
 		configure_stream_local("GPS_STATUS", 1.0f);
@@ -1686,6 +1688,7 @@ Mavlink::configure_streams_to_default(const char *configure_single_stream)
 		configure_stream_local("ESTIMATOR_STATUS", 1.0f);
 		configure_stream_local("EXTENDED_SYS_STATE", 1.0f);
 		configure_stream_local("GLOBAL_POSITION_INT", 5.0f);
+		configure_stream_local("GPS_GLOBAL_ORIGIN", 0.5f);
 		configure_stream_local("GPS2_RAW", 1.0f);
 		configure_stream_local("GPS_RAW_INT", 1.0f);
 		configure_stream_local("HOME_POSITION", 0.5f);
@@ -1762,6 +1765,7 @@ Mavlink::configure_streams_to_default(const char *configure_single_stream)
 		configure_stream_local("ESTIMATOR_STATUS", 5.0f);
 		configure_stream_local("EXTENDED_SYS_STATE", 2.0f);
 		configure_stream_local("GLOBAL_POSITION_INT", 10.0f);
+		configure_stream_local("GPS_GLOBAL_ORIGIN", 0.5f);
 		configure_stream_local("GPS2_RAW", unlimited_rate);
 		configure_stream_local("GPS_RAW_INT", unlimited_rate);
 		configure_stream_local("GPS_STATUS", 1.0f);
