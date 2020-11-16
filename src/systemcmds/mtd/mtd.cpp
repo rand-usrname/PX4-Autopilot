@@ -43,8 +43,10 @@
 #include <px4_platform_common/log.h>
 #include <px4_platform_common/module.h>
 #include <px4_platform_common/spi.h>
+#include <px4_platform_common/mtd_config.h>
 
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -70,7 +72,10 @@
 
 extern "C" __EXPORT int mtd_main(int argc, char *argv[]);
 
+#define report_system_error printf // TODO: hook to uORB
+
 #ifndef CONFIG_MTD
+
 
 /* create a fake command with decent warning to not confuse users */
 int mtd_main(int argc, char *argv[])
@@ -80,23 +85,22 @@ int mtd_main(int argc, char *argv[])
 }
 
 #else
-
 struct mtd_instance_s;
-
-#  if defined(BOARD_HAS_MTD_PARTITION_OVERRIDE)
-#    define MTD_PARTITION_TABLE  BOARD_HAS_MTD_PARTITION_OVERRIDE
-#  else
-#   define MTD_PARTITION_TABLE  {"/fs/mtd_params", "/fs/mtd_waypoints"}
-#  endif
+#if !defined(BOARD_MANAGED_MTD)
+#    if defined(BOARD_HAS_MTD_PARTITION_OVERRIDE)
+#      define MTD_PARTITION_TABLE  BOARD_HAS_MTD_PARTITION_OVERRIDE
+#    else
+#     define MTD_PARTITION_TABLE  {"/fs/mtd_params", "/fs/mtd_waypoints"}
+#    endif
 
 /* note, these will be equally sized */
 static const char *partition_names_default[] = MTD_PARTITION_TABLE;
-#if defined(BOARD_MTD_PARTITION_TABLE_SIZES)
+#  if defined(BOARD_MTD_PARTITION_TABLE_SIZES)
 static const float partition_sizes_default[] = BOARD_MTD_PARTITION_TABLE_SIZES;
-#else
+#  else
 #  define partition_sizes_default nullptr
+#  endif
 #endif
-
 
 #ifdef CONFIG_MTD_RAMTRON
 static int	ramtron_attach(mtd_instance_s &instance);
@@ -128,20 +132,30 @@ struct mtd_instance_s {
 	struct mtd_dev_s *mtd_dev;
 	unsigned n_partitions_current;
 	int *partition_block_counts;
+#if !defined(BOARD_MANAGED_MTD)
 	const float *partition_percentages;
+#else
+	uint32_t devid;
+#endif
 	const char **partition_names;
 };
 
+#if !defined(BOARD_MANAGED_MTD)
 static mtd_instance_s instances[] = {
-#ifdef CONFIG_MTD_RAMTRON
+#  ifdef CONFIG_MTD_RAMTRON
 	{&ramtron_attach, false, false, nullptr, 0, nullptr, partition_sizes_default, partition_names_default},
 #endif
-#ifdef PX4_I2C_BUS_MTD
+#  ifdef PX4_I2C_BUS_MTD
 	{&at24xxx_attach, false, false, nullptr, 0, nullptr, nullptr, nullptr},
-#endif
+#  endif
 };
 static constexpr int num_instances = arraySize(instances);
 static const int n_partitions_default = arraySize(partition_names_default);
+#else
+static int num_instances = 0;
+static mtd_instance_s *instances;
+#endif
+
 
 static int
 mtd_status(void)
@@ -170,13 +184,15 @@ static void	print_usage(void)
 
 	PRINT_MODULE_USAGE_NAME("mtd", "command");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("status", "Print status information");
-
+#if !defined(BOARD_MANAGED_MTD)
 	PRINT_MODULE_USAGE_COMMAND_DESCR("start", "Mount partitions");
+#endif
 	PRINT_MODULE_USAGE_COMMAND_DESCR("readtest", "Perform read test");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("rwtest", "Perform read-write test");
 	PRINT_MODULE_USAGE_COMMAND_DESCR("erase", "Erase partition(s)");
+#if !defined(BOARD_MANAGED_MTD)
 	PRINT_MODULE_USAGE_COMMAND_DESCR("has-secondary", "Check if the board has configured a secondary device");
-
+#endif
 	PRINT_MODULE_USAGE_PARAM_COMMENT("The commands 'start', 'readtest' and 'rwtest' have an optional instance index:");
 	PRINT_MODULE_USAGE_PARAM_INT('i', 0, 0, 1, "storage index (if the board has multiple storages)", true);
 
@@ -203,6 +219,9 @@ int mtd_main(int argc, char *argv[])
 		}
 
 		if (!strcmp(argv[1], "start")) {
+#if defined(BOARD_MANAGED_MTD)
+			return OK;
+#else
 
 			/* start mapping according to user request */
 			if (argc > partition_index) {
@@ -211,6 +230,8 @@ int mtd_main(int argc, char *argv[])
 			} else {
 				return mtd_start(instances[instance], partition_names_default, n_partitions_default);
 			}
+
+#endif
 		}
 
 		if (!strcmp(argv[1], "readtest")) {
@@ -218,7 +239,11 @@ int mtd_main(int argc, char *argv[])
 				return mtd_readtest(instances[instance], (const char **)(argv + partition_index), argc - partition_index);
 
 			} else {
+#if defined(BOARD_MANAGED_MTD)
+				return mtd_readtest(instances[instance], instances[instance].partition_names, instances[instance].n_partitions_current);
+#else
 				return mtd_readtest(instances[instance], partition_names_default, n_partitions_default);
+#endif
 			}
 		}
 
@@ -227,8 +252,14 @@ int mtd_main(int argc, char *argv[])
 				return mtd_rwtest(instances[instance], (const char **)(argv + partition_index), argc - partition_index);
 
 			} else {
+#if defined(BOARD_MANAGED_MTD)
+				return mtd_rwtest(instances[instance], instances[instance].partition_names, instances[instance].n_partitions_current);
+
+#else
 				return mtd_rwtest(instances[instance], partition_names_default, n_partitions_default);
+#endif
 			}
+
 		}
 
 		if (!strcmp(argv[1], "status")) {
@@ -240,7 +271,11 @@ int mtd_main(int argc, char *argv[])
 				return mtd_erase((const char **)(argv + partition_index), argc - partition_index);
 
 			} else {
+#if defined(BOARD_MANAGED_MTD)
+				return mtd_erase(instances[instance].partition_names, instances[instance].n_partitions_current);
+#else
 				return mtd_erase(partition_names_default, n_partitions_default);
+#endif
 			}
 		}
 
@@ -262,11 +297,15 @@ static int
 ramtron_attach(mtd_instance_s &instance)
 {
 	/* initialize the right spi */
+#if defined(BOARD_MANAGED_MTD)
+	struct spi_dev_s *spi = px4_spibus_initialize(px4_find_spi_bus(instance.devid));
+#else
 	struct spi_dev_s *spi = px4_spibus_initialize(px4_find_spi_bus(SPIDEV_FLASH(0)));
+#endif
 
 	if (spi == nullptr) {
 		PX4_ERR("failed to locate spi bus");
-		return 1;
+		return -ENXIO;
 	}
 
 	/* this resets the spi bus, set correct bus speed again */
@@ -293,7 +332,7 @@ ramtron_attach(mtd_instance_s &instance)
 	/* if last attempt is still unsuccessful, abort */
 	if (instance.mtd_dev == nullptr) {
 		PX4_ERR("failed to initialize mtd driver");
-		return 1;
+		return -EIO;
 	}
 
 	int ret = instance.mtd_dev->ioctl(instance.mtd_dev, MTDIOC_SETSPEED, (unsigned long)10 * 1000 * 1000);
@@ -316,16 +355,24 @@ static int
 at24xxx_attach(mtd_instance_s &instance)
 {
 	/* find the right I2C */
+#if defined(BOARD_MANAGED_MTD)
+	struct i2c_master_s *i2c = px4_i2cbus_initialize(PX4_I2C_DEVID_BUS(instance.devid));
+#else
 	struct i2c_master_s *i2c = px4_i2cbus_initialize(PX4_I2C_BUS_MTD);
+#endif
 
 	if (i2c == nullptr) {
 		PX4_ERR("failed to locate I2C bus");
-		return 1;
+		return -ENXIO;
 	}
 
 	/* start the MTD driver, attempt 5 times */
 	for (int i = 0; i < 5; i++) {
+#if defined(BOARD_MANAGED_MTD)
+		instance.mtd_dev = at24c_initialize(i2c, PX4_I2C_DEVID_ADDR(instance.devid));
+#else
 		instance.mtd_dev = at24c_initialize(i2c);
+#endif
 
 		if (instance.mtd_dev) {
 			/* abort on first valid result */
@@ -340,7 +387,7 @@ at24xxx_attach(mtd_instance_s &instance)
 	/* if last attempt is still unsuccessful, abort */
 	if (instance.mtd_dev == nullptr) {
 		PX4_ERR("failed to initialize EEPROM driver");
-		return 1;
+		return -EIO;
 	}
 
 	instance.attached = true;
@@ -366,11 +413,6 @@ mtd_start(mtd_instance_s &instance, const char *partition_names[], unsigned n_pa
 		}
 	}
 
-	if (!instance.mtd_dev) {
-		PX4_ERR("Failed to create MTD instance");
-		return 1;
-	}
-
 	unsigned long blocksize, erasesize, neraseblocks;
 	unsigned blkpererase, nblocks, partsize;
 
@@ -389,7 +431,7 @@ mtd_start(mtd_instance_s &instance, const char *partition_names[], unsigned n_pa
 	unsigned offset;
 	unsigned i;
 
-
+#if !defined(BOARD_MANAGED_MTD)
 	instance.partition_block_counts = new int[n_partitions];
 
 	if (instance.partition_block_counts == nullptr) {
@@ -412,6 +454,8 @@ mtd_start(mtd_instance_s &instance, const char *partition_names[], unsigned n_pa
 		instance.partition_names[n] = nullptr;
 	}
 
+#endif
+
 	for (offset = 0, i = 0; i < n_partitions; offset += instance.partition_block_counts[i], i++) {
 
 		/* Create the partition */
@@ -421,11 +465,12 @@ mtd_start(mtd_instance_s &instance, const char *partition_names[], unsigned n_pa
 		if (!part[i]) {
 			PX4_ERR("mtd_partition failed. offset=%lu nblocks=%lu",
 				(unsigned long)offset, (unsigned long)nblocks);
-			return 1;
+			return -ENOSPC;
 		}
 
+#if !defined(BOARD_MANAGED_MTD)
 		instance.partition_names[i] = strdup(partition_names[i]);
-
+#endif
 		/* Initialize to provide an FTL block driver on the MTD FLASH interface */
 
 		ret = -1;
@@ -440,8 +485,12 @@ mtd_start(mtd_instance_s &instance, const char *partition_names[], unsigned n_pa
 			}
 
 			if (ret < 0 || dev_index >= 9) {
+				if (ret == 0 && dev_index >= 9) {
+					ret = -ENOSPC;
+				}
+
 				PX4_ERR("ftl_initialize %s failed: %d", blockname, ret);
-				return 1;
+				return ret;
 			}
 		}
 
@@ -451,7 +500,7 @@ mtd_start(mtd_instance_s &instance, const char *partition_names[], unsigned n_pa
 
 		if (ret < 0) {
 			PX4_ERR("bchdev_register %s failed: %d", partition_names[i], ret);
-			return 1;
+			return ret;
 		}
 	}
 
@@ -537,6 +586,12 @@ int mtd_print_info(int instance)
 	printf("  erasesize:      %lu\n", erasesize);
 	printf("  neraseblocks:   %lu\n", neraseblocks);
 	printf("  No. partitions: %u\n", instances[instance].n_partitions_current);
+
+	for (unsigned int i = 0; i < instances[instance].n_partitions_current; i++) {
+		printf("    name : %s  blocks %u\n", instances[instance].partition_names[i],
+		       instances[instance].partition_block_counts[i]);
+	}
+
 	printf("  Partition size: %u Blocks (%u bytes)\n", nblocks, partsize);
 	printf("  TOTAL SIZE: %u KiB\n", neraseblocks * erasesize / 1024);
 
@@ -688,5 +743,69 @@ mtd_rwtest(const mtd_instance_s &instance, const char *partition_names[], unsign
 	printf("rwtest OK\n");
 	return 0;
 }
+
+#if defined(BOARD_MANAGED_MTD)
+
+int px4_mtd_config(const px4_mtd_config_t *mtd_list)
+{
+	int rv = -EINVAL;
+
+	if (mtd_list != nullptr) {
+		rv = -ENOMEM;
+		instances = new mtd_instance_s[mtd_list->nconfigs];
+
+		if (instances != nullptr) {
+			for (uint32_t i = 0; i < mtd_list->nconfigs; i++) {
+				num_instances++;
+				uint32_t nparts = mtd_list->entries[i]->npart;
+
+				for (uint32_t e = 0; e < nparts; e++) {
+					instances[i].attach = mtd_list->entries[i]->device->bus_type == px4_mtd_device_t::I2C ?
+							      at24xxx_attach : ramtron_attach;
+					instances[i].devid = mtd_list->entries[i]->device->devid;
+					instances[i].attached = false;
+					instances[i].started = false;
+					instances[i].mtd_dev = nullptr;
+					instances[i].n_partitions_current = 0;
+					instances[i].partition_block_counts = new int[nparts];
+
+					rv = -ENOMEM;
+
+					if (instances[i].partition_block_counts == nullptr) {
+						break;
+					}
+
+					instances[i].partition_names = new const char *[nparts];
+
+					if (instances[i].partition_names == nullptr) {
+						break;
+					}
+
+					for (uint32_t p = 0; p < nparts; p++) {
+						instances[i].partition_block_counts[p] =  mtd_list->entries[i]->partd[p].nblocks;
+						instances[i].partition_names[p] = mtd_list->entries[i]->partd[p].path;
+					}
+
+					rv = 0;
+				}
+
+				if (rv == 0) {
+					rv = mtd_start(instances[i], instances[i].partition_names, nparts);
+				}
+
+				if (rv < 0) {
+					report_system_error("mtd failure: %d bus %d address %d class %d\n",
+							    rv,
+							    PX4_I2C_DEVID_BUS(instances[i].devid),
+							    PX4_I2C_DEVID_ADDR(instances[i].devid),
+							    mtd_list->entries[i]->partd[instances[i].n_partitions_current].type);
+				}
+			}
+		}
+	}
+
+	return rv;
+}
+#endif
 
 #endif
